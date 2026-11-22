@@ -272,12 +272,20 @@ def do_pdf(data, name, ctx, depth):
         if red:
             page.apply_redactions(images=pymupdf.PDF_REDACT_IMAGE_NONE, graphics=pymupdf.PDF_REDACT_LINE_ART_NONE)
             ctx.stats["pdf_words"] += red; changed = True
-        for l in page.get_links():
-            u = l.get("uri")
-            if u:
-                nu = eng.apply(u)
+        for xref, atype, _ in page.annot_xrefs():
+            if atype != pymupdf.PDF_ANNOT_LINK or xref <= 0:
+                continue
+            kind, u = doc.xref_get_key(xref, "A/URI")
+            if kind == "string" and u:
+                nu = eng.apply(u, stats=ctx.stats)
                 if nu != u:
-                    l["uri"] = nu; page.update_link(l); changed = True
+                    doc.xref_set_key(xref, "A/URI", pymupdf.get_pdf_str(nu)); changed = True
+        # link annotations stored inline in the page's /Annots array have no object of their own
+        kind, raw = doc.xref_get_key(page.xref, "Annots")
+        if kind == "array" and "/URI" in raw:
+            nraw = re.sub(r"(/URI\s*\()((?:\\.|[^\\)])*)", lambda m: m.group(1) + eng.apply(m.group(2), stats=ctx.stats), raw)
+            if nraw != raw:
+                doc.xref_set_key(page.xref, "Annots", nraw); changed = True
     toc = doc.get_toc(simple=False)
     if toc:
         nt = [[t[0], eng.apply(t[1]), t[2]] + list(t[3:]) for t in toc]

@@ -342,6 +342,8 @@ class Engine:
                     continue
             old = s[a:b]
             new = self._rep(kind, old)
+            if new == old and kind != "t":
+                continue  # e.g. a URL on a standard host: let terms inside it match
             last = b
             if new != old:
                 edits.append((a, b, new))
