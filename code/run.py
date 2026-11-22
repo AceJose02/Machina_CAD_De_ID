@@ -8,7 +8,7 @@
 --state holds the private key, the identifier registry and run logs. Never upload it.
 """
 from __future__ import annotations
-import argparse, json, os, secrets, sys, time
+import argparse, json, os, secrets, sys, time, zlib
 from collections import Counter
 from multiprocessing import Pool
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -79,29 +79,42 @@ def w_verify(rel):
         ctx.issue(rel, "residual: %d" % (ctx.stats["residual"] + ctx.stats["residual_path"]))
     return rel, None, ctx.stats, ctx.issues, None
 
+def init(inp, out, force, state):
+    """Per-process setup (workers are spawned, not forked, on macOS)."""
+    G.update(input=inp, output=out, force=force)
+    if state:
+        G["engine"] = load_engine(state)
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("cmd", choices=["discover", "transform", "verify"])
     ap.add_argument("--input"); ap.add_argument("--output"); ap.add_argument("--state", required=True)
     ap.add_argument("--jobs", type=int, default=os.cpu_count() or 4)
     ap.add_argument("--force", action="store_true"); ap.add_argument("--limit", type=int, default=0)
+    ap.add_argument("--shard", default="", help="K/N: transform only the K-th of N slices of the input (by path hash)")
     a = ap.parse_args()
     os.makedirs(a.state, exist_ok=True)
     kp = os.path.join(a.state, "key.bin")
     if not os.path.exists(kp):
         open(kp, "wb").write(secrets.token_bytes(32))
-    G.update(input=a.input, output=a.output, force=a.force)
     root = a.output if a.cmd == "verify" else a.input
     files = list(walk(root))
+    tag = ""
+    if a.shard and a.cmd == "transform":
+        k, n = map(int, a.shard.split("/"))
+        files = [f for f in files if zlib.crc32(f.encode("utf-8")) % n == k - 1]
+        tag = f"-{k}of{n}"
+    elif a.shard:
+        tag = "-" + a.shard.replace("/", "of")
     if a.limit:
         files = files[:a.limit]
+    init(a.input, a.output, a.force, a.state if a.cmd != "discover" else None)
     if a.cmd != "discover":
-        G["engine"] = load_engine(a.state)
         print("terms:", G["engine"].n_terms, flush=True)
     fn = {"discover": w_discover, "transform": w_transform, "verify": w_verify}[a.cmd]
     reg, stats, issues, pathmap = Registry(), Counter(), [], {}
     t0 = time.time()
-    with Pool(a.jobs) as pool:
+    with Pool(a.jobs, initializer=init, initargs=(a.input, a.output, a.force, a.state if a.cmd != "discover" else None)) as pool:
         for i, (rel, r, st, iss, out_rel) in enumerate(pool.imap_unordered(fn, files, chunksize=4), 1):
             if r is not None: reg.merge(r)
             stats.update(st); issues += iss
@@ -112,7 +125,7 @@ def main():
         reg.dump(os.path.join(a.state, "registry.json"))
         print("words:", len(reg.words), "phrases:", len(reg.phrases))
     json.dump({"stats": dict(stats), "issues": issues, "paths": pathmap},
-              open(os.path.join(a.state, f"report-{a.cmd}.json"), "w"), indent=1)
+              open(os.path.join(a.state, f"report-{a.cmd}{tag}.json"), "w"), indent=1)
     print(json.dumps({k: v for k, v in sorted(stats.items())}, indent=1))
     print("issues:", len(issues))
 
