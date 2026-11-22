@@ -1,6 +1,7 @@
 """Format knowledge: where identity fields live, and container readers/writers."""
 from __future__ import annotations
 import re, struct, zlib
+from .core import is_common
 
 # ---------------------------------------------------------------- STEP (ISO 10303-21)
 def _args(s: str, pos: int, limit: int = 20000):
@@ -246,3 +247,24 @@ def sw_check(data: bytes) -> bool:
             if struct.unpack_from("<III", data, o + 10) == struct.unpack_from("<III", data, s["sig"] + 14):
                 seen.add(off)
     return len(seen) == len(st)
+
+# ---------------------------------------------------------------- names in running text
+_CUE = re.compile(
+    r"(?i:(?:designed|drawn|created|made|written|modell?ed|developed|checked|approved|authored|maintained|engineered)\s+by"
+    r"|(?:authors?|maintainers?|designer|drawn|checked|approved|engineer|contact)\s*[:=]"
+    r"|copyright\s*(?:\(c\)|\xa9|\xc2\xa9)?\s*(?:\d{4}(?:\s*[-,]\s*\d{4})*)?,?)"
+    r"[ \t]*(?:\r?\n[ \t]*)?((?:[A-Z][A-Za-z'\-]+\.?)(?:[ \t]+[A-Z][A-Za-z'\-]+\.?){1,3})")
+_NOT_NAME = re.compile(r"(?i)\b(foundation|contributors?|authors?|rights|reserved|license|software|project|team|the|inc|"
+                       r"corporation|version|all|this|and|for|notice|holders?|permission|see|file)\b")
+
+def text_names(text: str):
+    """Person/organisation names introduced by a cue word in prose (README, licence, title block text)."""
+    out = []
+    for m in _CUE.finditer(text):
+        toks = m.group(1).strip(" .").split()
+        while len(toks) > 2 and is_common(toks[-1].strip(".")):
+            toks.pop()  # "Jane Doe Use ..." -> "Jane Doe"
+        v = " ".join(toks)
+        if len(toks) >= 2 and not _NOT_NAME.search(v) and not all(is_common(t.strip(".")) for t in toks):
+            out.append(v)
+    return out

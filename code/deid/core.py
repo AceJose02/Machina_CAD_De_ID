@@ -47,6 +47,19 @@ admin user users owner author guest default system server client local remote ma
 china india japan korea france spain italy germany england canada mexico brazil texas paris london berlin
 """.split())
 
+COMMON |= set("""robotics robot desktop laptop github gitlab cad cam cnc pcb usb hdmi ethernet arduino raspberry
+online offline website internet software hardware firmware download upload email login username password""".split())
+try:  # lower-case dictionary words are never treated as stand-alone identity terms
+    from english_words import get_english_words_set
+    COMMON |= {w for w in get_english_words_set(["web2"], alpha=True) if w.islower()}
+except Exception:
+    pass
+
+
+def is_common(word: str) -> bool:
+    return word.lower() in COMMON
+
+
 EMAIL = r"[A-Za-z0-9][A-Za-z0-9._%+\-]{0,63}@[A-Za-z0-9][A-Za-z0-9\-]{0,62}(?:\.[A-Za-z0-9\-]{1,63}){1,4}"
 URL = r"(?:https?://|ftp://|www\.)[A-Za-z0-9][A-Za-z0-9.\-]{2,200}"
 USERPATH = r"(?:[Uu]sers|USERS|Documents and Settings|home)(?:\\\\|[\\/])[^\\/\x00-\x1f\"'<>|:*?]{1,48}(?=[\\/])"
@@ -143,7 +156,7 @@ class Registry:
                 self.phrases[key] += 1
             # distinctive individual words of a multi-word identity are identities too
             for w in sig:
-                if len(w) >= 6 and not w.isdigit() and w not in COMMON and kind == "person":
+                if len(w) >= 5 and not w.isdigit() and w not in COMMON and kind == "person":
                     self.words[w] += 1
         if key:
             self.sources.setdefault(key, set()).add(kind)

@@ -93,6 +93,9 @@ def generic(data: bytes, name: str, ctx: Ctx) -> bytes:
             ctx.reg.note(kind, s[a:b])
         for m in UP_RX.finditer(s):
             ctx.reg.note("person", re.split(r"[\\/]+", m.group(0), 1)[1])
+        if textlike and len(s) < 5_000_000:
+            for v in F.text_names(s):
+                ctx.reg.note("person", v)
         if not textlike:
             for r in U16.finditer(data):
                 for m in UP_RX.finditer(r.group(0).decode("utf-16-le")):
@@ -230,6 +233,11 @@ def do_pdf(data, name, ctx, depth):
     if ctx.mode == "discover":
         if md.get("author"):
             ctx.reg.note("person", md["author"])
+        for i, page in enumerate(doc):
+            if i >= 200:
+                break
+            for v in F.text_names(page.get_text()):
+                ctx.reg.note("person", v)
         for n in doc.embfile_names():
             process(doc.embfile_get(n), n, ctx, depth + 1)
         return data
