@@ -21,7 +21,10 @@ STOP_VALUES = {
     "root", "public", "all users", "default user", "system", "test", "student", "home",
     "name", "company", "organization", "nobody", "-", "?", "x", "xx", "xxx", "tbd", "your name",
     "runner", "ubuntu", "user1", "desktop", "documents", "downloads", "shared",
+    "utilisateur", "usuario", "gebruiker", "utente", "administrador", "benutzer", "administrateur", "usuari",
+    "guest user", "pc user", "windows user", "an author", "first name", "last name",
 }
+_PLACEHOLDER_RX = re.compile(r"^(?:(?:person|organi[sz]ation)[ _]?)?(?:id|name|first[ _]?name|last[ _]?name)(?:[ _]?\d+)?$")
 VENDOR_HINTS = (
     "solidworks", "dassault", "autodesk", "siemens", "microsoft", "freecad", "ptc", "parametric technology",
     "opencascade", "open cascade", "cadquery", "onshape", "inventor", "fusion 360", "catia", "solid edge",
@@ -75,6 +78,10 @@ SAFE_HOSTS = (
 )
 
 
+TLDS = frozenset("""com org net edu gov mil int io co uk de fr it es nl ch at be se no dk fi pl cz ru cn jp kr in br au ca us eu
+info biz dev app ai me tv cc xyz tech online site ie pt gr tr il mx ar cl za nz sg hk tw si hr hu ro sk ua""".split())
+
+
 class Mapper:
     def __init__(self, key: bytes):
         self.key = key
@@ -123,7 +130,7 @@ class Mapper:
 
 def is_placeholder(value: str) -> bool:
     v = " ".join(value.lower().split())
-    if v in STOP_VALUES or not TOKEN.search(v):
+    if v in STOP_VALUES or not TOKEN.search(v) or _PLACEHOLDER_RX.match(v):
         return True
     return any(h in v for h in VENDOR_HINTS)
 
@@ -202,12 +209,19 @@ class Engine:
         self.m = mapper
         words = {w for w in registry.words if w not in allow}
         phrases = {p for p in registry.phrases if p not in allow}
+        literals = set()  # exact spellings such as a domain used as a name ("acme.tools")
         for e in extra:
-            e = " ".join(TOKEN.findall(e.lower()))
+            e = e.strip().lower()
+            if " " not in e and re.search(r"[^a-z0-9]", e) and TOKEN.search(e):
+                literals.add(e)
+                continue
+            e = " ".join(TOKEN.findall(e))
             if e:
                 (phrases if " " in e else words).add(e)
-        self.n_terms = len(words) + len(phrases)
+        self.n_terms = len(words) + len(phrases) + len(literals)
         keys: dict[str, list] = {}
+        for w in literals:
+            keys.setdefault(w, []).append(("w", None))
         for w in words:
             keys.setdefault(w, []).append(("w", None))
         for p in phrases:
@@ -298,7 +312,8 @@ class Engine:
     def _email(self, s):
         local, dom = s.rsplit("@", 1)
         labels = dom.split(".")
-        return self.m.words(local) + "@" + ".".join([self.m.words(x) for x in labels[:-1]] + labels[-1:])
+        keep = 1 if labels[-1].lower() in TLDS else 0
+        return self.m.words(local) + "@" + ".".join([self.m.words(x) for x in labels[:len(labels) - keep]] + labels[len(labels) - keep:])
 
     def _url(self, s):
         i = s.find("//")
@@ -307,7 +322,9 @@ class Engine:
         if any(h == sh or h.endswith("." + sh) for sh in SAFE_HOSTS) or h.replace(".", "").isdigit() or "." not in h:
             return s
         labels = host.split(".")
-        return pre + ".".join([l if l.lower() == "www" else self.m.words(l) for l in labels[:-1]] + labels[-1:])
+        keep = 1 if labels[-1].lower() in TLDS else 0
+        n = len(labels) - keep
+        return pre + ".".join([l if l.lower() == "www" else self.m.words(l) for l in labels[:n]] + labels[n:])
 
     def _up(self, s):
         m = re.match(r"(.*?(?:\\\\|[\\/]))(.*)$", s, re.S)

@@ -12,7 +12,10 @@ import argparse, json, os, secrets, sys, time, zlib
 from collections import Counter
 from multiprocessing import Pool
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from deid.core import Engine, Mapper, Registry
+import re
+from deid.core import Engine, Mapper, Registry, is_common
+
+PLACEHOLDER_PHRASE = re.compile(r"^(?:(?:person|organization|organisation) )?(?:id|name|first name|last name)(?: \d+)?$|^(?:person|organization) id \d+$")
 from deid.pipeline import Ctx, map_relpath, process
 
 G = {}
@@ -35,7 +38,26 @@ def load_engine(state):
     pe = os.path.join(state, "extra_terms.txt")
     if os.path.exists(pe):
         extra += [l.strip() for l in open(pe, encoding="utf-8") if l.strip() and not l.startswith("#")]
-    return Engine(Mapper(key), reg, allow={a.lower() for a in rd("allow.txt")}, extra=extra)
+    allow = {a.lower() for a in rd("allow.txt")} | {a.lower() for a in rd("protected.txt")}
+    plural = lambda t: any(t.endswith(x) and is_common(t[:-len(x)]) for x in ("s", "es", "ed", "ing"))
+    # generic phrases are not identities: placeholders, and repository/organisation labels made only of
+    # dictionary words ("cad files", "machine elements"). Their own folder is still renamed by map_relpath.
+    name_words = set()
+    for p in list(reg.phrases):
+        toks = p.split()
+        src = reg.sources.get(p, set())
+        generic = all(t.isdigit() or len(t) < 3 or is_common(t) or plural(t) for t in toks)
+        if PLACEHOLDER_PHRASE.match(p) or (generic and not (src & {"person", "path-owner"})) or any(t in ("https", "http", "www") for t in toks):
+            allow.add(p)
+        elif "person" in src and 2 <= len(toks) <= 3 and all(t.isalpha() and len(t) >= 2 for t in toks):
+            name_words.update(toks)
+    # single words: keep usernames/owners/field values; words that only came from inside a longer value
+    # must belong to a personal-name phrase; inflected dictionary words are dropped unless they are an owner.
+    for w in list(reg.words):
+        src = reg.sources.get(w, set())
+        if (not src and w not in name_words) or ("path-owner" not in src and plural(w)):
+            allow.add(w)
+    return Engine(Mapper(key), reg, allow=allow, extra=extra)
 
 def w_discover(rel):
     ctx = Ctx("discover")

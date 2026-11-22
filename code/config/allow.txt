@@ -1,1 +1,55 @@
 # registry terms that must never be replaced (lower case)
+models
+notices
+resources
+students
+windows
+services
+solutions
+instruments
+objects
+machines
+systems
+drawings
+bearings
+enterprises
+bridges
+redesigned
+dated
+assisted
+automated
+implementers
+draughting
+workstation
+gmail
+swedish
+beep
+etudes
+occt
+reprap
+utilisateur
+gebruiker
+utente
+administrador
+usuario
+guest user
+notices or
+test 64
+pc user
+windows user
+an author
+sw demo
+it division
+roman
+pcbnew
+ezdxf
+build123d
+unix
+automation
+zw3d
+zwcad software co
+cadenas
+step tools inc
+nown
+iiiiiiii
+i deas master
