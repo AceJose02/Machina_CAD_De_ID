@@ -1,0 +1,1 @@
+# registry terms that must never be replaced (lower case)

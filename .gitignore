@@ -1,0 +1,10 @@
+# raw input, outputs and private state never go to git
+input/
+cleaned-corpus/
+state/
+_to_delete/
+*.part~
+__pycache__/
+*.pyc
+get-input.sh
+upload.py
